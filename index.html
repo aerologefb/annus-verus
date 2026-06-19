@@ -472,7 +472,7 @@ footer .sig{font-family:var(--display); letter-spacing:0.22em; color:var(--gold)
       </div>
     </div>
   </div>
-  <p class="wheel-cap reveal">The golden star marks <b>today</b> — 16 June 2026 in the old reckoning, the 10th of <b>Highsun</b> in the new. The wheel turns clockwise from the longest night at the top.</p>
+  <p class="wheel-cap reveal" id="wheelCap">The wheel turns clockwise from the longest night at the top.</p>
 </section>
 
 <div class="divider"></div>
@@ -698,8 +698,17 @@ const STATION_DOY = [0,45,89,136,182,229,275,321]; // Firstlight..Hallows
 const SEASON_OF_MONTH = ['winter','winter','winter','spring','spring','spring','summer','summer','summer','autumn','autumn','autumn','winter'];
 const SEASON_COLOR = {winter:'#7aa6dd', spring:'#86c47a', summer:'#e8b545', autumn:'#d2703a'};
 const WEEK_NAMES = ['Week of Kindling','Week of Waxing','Week of Waning','Week of Gathering'];
-const TODAY_DOY = 177;                   // 16 Jun 2026 = day index 177 from ~21 Dec 2025
-const SOLSTICE_EPOCH = Date.UTC(2025,11,21,0,0,0); // reference Dec-solstice dawn for the displayed year
+// "Today" is computed live from the system clock so the wheel always tracks the real current date.
+const NOW = new Date();
+const TODAY_UTC = Date.UTC(NOW.getFullYear(), NOW.getMonth(), NOW.getDate()); // local calendar day as a UTC midnight
+function recentDecSolstice(ms){ // most recent ~Dec 21 anchor on or before ms
+  const y = new Date(ms).getUTCFullYear();
+  let sol = Date.UTC(y,11,21);
+  if(ms < sol) sol = Date.UTC(y-1,11,21);
+  return sol;
+}
+const SOLSTICE_EPOCH = recentDecSolstice(TODAY_UTC); // Dec-solstice anchor of the current year
+const TODAY_DOY = Math.max(0, Math.min(DAYS-1, Math.round((TODAY_UTC - SOLSTICE_EPOCH)/86400000))); // day-of-year from the solstice
 const SYNODIC = 29.530588;
 const NEWMOON_EPOCH = Date.UTC(2026,5,14,18,0,0);  // a known new Moon, ~14 Jun 2026
 
@@ -1072,6 +1081,9 @@ function ordinal(n){ const s=['th','st','nd','rd'],v=n%100; return n+(s[(v-20)%1
       <div class="co"><div class="lab">The Moon</div><div class="v sm">${mp.name}</div></div>`;
     stamp.textContent=`“${label}, ${weekName} — ${season}.” · the Moon ${mp.age.toFixed(0)} days old, ${Math.round(mp.illum*100)}% lit.`;
   }
+  // default the picker to the real current date
+  const _t=new Date();
+  input.value=`${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,'0')}-${String(_t.getDate()).padStart(2,'0')}`;
   input.addEventListener('input',convert); convert();
 })();
 
@@ -1204,6 +1216,13 @@ function ordinal(n){ const s=['th','st','nd','rd'],v=n%100; return n+(s[(v-20)%1
   });
   $('#heroTagline').textContent=DATA.design.tagline;
   $('#footerProse').textContent=DATA.design.rationale;
+  // wheel caption reflects the real current date
+  (()=>{ const cap=$('#wheelCap'); if(!cap) return;
+    const mo=monthOfDoy(TODAY_DOY);
+    const trueDate = mo.yearDay ? 'Solstice Day' : `${ordinal(mo.d+1)} of <b>${DATA.design.months[mo.m].name.split(' ')[0]}</b>`;
+    const greg = new Date(TODAY_UTC).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
+    cap.innerHTML=`The golden star marks <b>today</b> — ${greg} in the old reckoning, the ${trueDate} in the new. The wheel turns clockwise from the longest night at the top.`;
+  })();
   // assemble obfuscated email on the client so the page source carries no scrapable address
   $$('.js-eml').forEach(el=>{ try{ const e=atob(el.dataset.eml);
     el.setAttribute('href','mailto:'+e);
