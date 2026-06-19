@@ -71,7 +71,22 @@ nav .brand .sun-mark{width:16px; height:16px; border-radius:50%;
 nav .links{display:flex; gap:1.4rem; font-family:var(--mono); font-size:0.68rem; letter-spacing:0.2em; text-transform:uppercase}
 nav .links a{color:var(--parchment-dim); transition:color .25s}
 nav .links a:hover{color:var(--gold-bright)}
-@media(max-width:880px){nav .links{display:none}}
+.nav-toggle{display:none; flex-direction:column; justify-content:center; gap:5px; width:42px; height:42px; padding:9px 8px; background:none; border:none; cursor:pointer; -webkit-tap-highlight-color:transparent}
+.nav-toggle span{display:block; height:2px; width:100%; background:var(--gold); border-radius:2px; transition:transform .3s ease, opacity .25s ease}
+nav.open .nav-toggle span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+nav.open .nav-toggle span:nth-child(2){opacity:0}
+nav.open .nav-toggle span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+@media(max-width:880px){
+  .nav-toggle{display:flex}
+  nav .links{position:absolute; top:100%; left:0; right:0; flex-direction:column; gap:0;
+    background:rgba(8,9,18,0.97); backdrop-filter:blur(12px); border-bottom:1px solid var(--line);
+    max-height:0; overflow:hidden; opacity:0; pointer-events:none;
+    padding:0 clamp(1rem,5vw,3rem); transition:max-height .38s ease, opacity .25s ease, padding .38s ease}
+  nav.open .links{max-height:80vh; opacity:1; pointer-events:auto; padding:0.4rem clamp(1rem,5vw,3rem) 1rem}
+  nav .links a{display:block; padding:0.95rem 0.2rem; font-size:0.8rem; letter-spacing:0.22em; color:var(--parchment);
+    border-bottom:1px solid var(--line-soft)}
+  nav .links a:last-child{border-bottom:none}
+}
 
 /* ---------- hero ---------- */
 .hero{min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -355,7 +370,8 @@ footer .sig{font-family:var(--display); letter-spacing:0.22em; color:var(--gold)
 
 <nav class="top" id="nav">
   <div class="brand"><span class="sun-mark"></span> ANNVS·VERVS</div>
-  <div class="links">
+  <button class="nav-toggle" id="navToggle" aria-label="Open navigation menu" aria-expanded="false"><span></span><span></span><span></span></button>
+  <div class="links" id="navLinks">
     <a href="#primer">Plain Words</a>
     <a href="#wheel">The Wheel</a>
     <a href="#months">Months</a>
@@ -762,13 +778,16 @@ function monthOfDoy(doy){
   let w,h,DPR,layers,shoot=[];
   let mx=0,my=0,tmx=0,tmy=0,scrollY0=0;
   const rnd=(a,b)=>a+Math.random()*(b-a);
-  function build(){
+  let pw=-1, running=true, rTimer=null;
+  function sizeCanvas(){
     DPR=Math.min(window.devicePixelRatio||1,2);
     w=innerWidth; h=innerHeight;
     c.width=w*DPR; c.height=h*DPR; c.style.width=w+'px'; c.style.height=h+'px';
     x.setTransform(DPR,0,0,DPR,0,0);
+  }
+  function buildStars(){
     const area=w*h;
-    // three parallax depths: far dust -> near bright
+    // three parallax depths: far dust -> near bright. Density scales with screen area.
     const defs=[
       {n:area/7000,  rng:[0.3,0.8], al:[0.18,0.5], drift:2.5, par:0.18, glint:false},
       {n:area/13000, rng:[0.5,1.3], al:[0.35,0.8], drift:5.5, par:0.45, glint:false},
@@ -785,20 +804,32 @@ function monthOfDoy(doy){
       }
       return {stars, par:d.par, glint:d.glint};
     });
+    pw=w;
   }
   function drawStatic(){ x.clearRect(0,0,w,h);
     for(const l of layers) for(const s of l.stars){ x.globalAlpha=s.base; x.fillStyle=s.hue;
       x.beginPath(); x.arc(s.x,s.y,s.r,0,TAU); x.fill(); } x.globalAlpha=1; }
-  build(); addEventListener('resize',()=>{ build(); if(reduce) drawStatic(); });
+  sizeCanvas(); buildStars();
+  // Resize: always resize the canvas, but only regenerate stars when WIDTH changes — so the mobile
+  // address-bar show/hide (a height-only resize) never reshuffles the starfield mid-scroll.
+  addEventListener('resize',()=>{
+    const widthChanged = innerWidth !== pw;
+    sizeCanvas();
+    if(reduce){ if(widthChanged) buildStars(); drawStatic(); return; }
+    if(widthChanged){ if(rTimer) cancelAnimationFrame(rTimer); rTimer=requestAnimationFrame(buildStars); }
+  });
   if(reduce){ drawStatic(); return; }
   addEventListener('mousemove',e=>{ tmx=e.clientX/w-0.5; tmy=e.clientY/h-0.5; },{passive:true});
   addEventListener('scroll',()=>{ scrollY0=window.scrollY; },{passive:true});
+  // pause the animation loop when the tab/app is backgrounded (saves battery on mobile)
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden){ running=false; } else if(!running){ running=true; requestAnimationFrame(loop); } });
   function spawnShoot(){
     const ang=rnd(Math.PI*0.60,Math.PI*0.92), spd=rnd(6,13), tint=Math.random()<0.25?'180,210,255':'255,243,207';
     shoot.push({x:rnd(w*0.15,w), y:rnd(-20,h*0.45), vx:-Math.cos(ang)*spd, vy:Math.sin(ang)*spd,
       life:1, decay:rnd(0.012,0.024), len:rnd(6,12), tint});
   }
   function loop(){
+    if(!running) return;
     mx+=(tmx-mx)*0.045; my+=(tmy-my)*0.045;
     x.clearRect(0,0,w,h);
     for(const l of layers){
@@ -1293,6 +1324,14 @@ function ordinal(n){ const s=['th','st','nd','rd'],v=n%100; return n+(s[(v-20)%1
   setTimeout(()=>$$('.hero .reveal').forEach((el,i)=>setTimeout(()=>el.classList.add('in'),i*120)),200);
   const nav=$('#nav');
   addEventListener('scroll',()=>{ nav.classList.toggle('scrolled', scrollY>40); },{passive:true});
+  // mobile menu
+  const navToggle=$('#navToggle');
+  if(navToggle){
+    const setOpen=o=>{ nav.classList.toggle('open',o); navToggle.setAttribute('aria-expanded',o); };
+    navToggle.addEventListener('click',e=>{ e.stopPropagation(); setOpen(!nav.classList.contains('open')); });
+    nav.querySelectorAll('.links a').forEach(a=>a.addEventListener('click',()=>setOpen(false)));
+    document.addEventListener('click',e=>{ if(nav.classList.contains('open') && !nav.contains(e.target)) setOpen(false); });
+  }
 })();
 </script>
 </body>
